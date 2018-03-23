@@ -259,10 +259,14 @@ int main() {
 							car_s = end_path_s;
 						}
 						
-						bool too_close_front = false;
-						double front_car_speed, right_front_dist, left_front_dist;
+						bool too_close_front = false, close_front = true;
+						int wanted_lane = lane;
 						bool too_close_right = false;
 						bool too_close_left = false;
+						bool lane0_not_free = false, lane1_not_free = false, lane2_not_free = false;
+						double lane0_dist = 1000000, lane1_dist = 1000000, lane2_dist = 1000000;
+						int delay_change = 0;
+						double front_dist, last_dist = 30;
 						
 						// find_ref_v to use
 						for (int i=0; i<sensor_fusion.size(); i++)
@@ -286,28 +290,89 @@ int main() {
 							// Estimate the next s for the car
 							check_car_s += ((double)prev_size*.02*check_speed);
 						
+							if ((lane == observed_car_lane) && (check_car_s > car_s) && ((check_car_s-car_s)<30))
+								close_front = true;
 							if ((lane == observed_car_lane) && (check_car_s > car_s) && ((check_car_s-car_s)<20))
+							{
 								too_close_front = true;
+								front_dist = check_car_s-car_s;
+							}
 							else if (((lane-observed_car_lane) == -1) && (fabs(check_car_s-car_s)<20))
 								// car right
 								too_close_right = true;
 							else if (((lane-observed_car_lane) == 1) && (fabs(check_car_s-car_s)<20))
 								// car left
 								too_close_left = true;
+								
+							if (check_car_s > car_s && check_car_s-car_s < 150)
+							{
+								if ( observed_car_lane == 0 && (check_car_s-car_s) < lane0_dist)
+								{
+									lane0_not_free = true;
+									lane0_dist = check_car_s-car_s;
+								}
+								else if ( observed_car_lane == 1 && (check_car_s-car_s) < lane1_dist)
+								{
+									lane1_not_free = true;
+									lane1_dist = check_car_s-car_s;
+								}
+								else if ( observed_car_lane == 2 && (check_car_s-car_s) < lane2_dist)
+								{
+									lane2_not_free = true;
+									lane2_dist = check_car_s-car_s;
+								}
+								if (check_car_s-car_s > 0)
+									cout << "car" << i << ", lane: " << observed_car_lane << ", speed: " << check_speed << ", dist: " << check_car_s-car_s <<endl;
+							}
 						}
 						
+						if (lane0_dist > lane1_dist)
+						{
+							if (lane0_dist > lane2_dist)
+								wanted_lane = 0;
+							else if (lane0_dist < lane2_dist)
+								wanted_lane = 2;
+						}
+						else if (lane0_dist < lane1_dist)
+						{
+							if (lane1_dist > lane2_dist)
+								wanted_lane = 1;
+							else if (lane1_dist < lane2_dist)
+								wanted_lane = 2;
+						}
+						
+						if (lane != wanted_lane && ref_vel > 35)
+						{
+							cout << wanted_lane << endl;
+							if (delay_change < 1)
+							{
+								if (abs(lane-wanted_lane) > 1)
+									delay_change = 100;
+									
+								if ((lane-wanted_lane) < 0 && !too_close_right)
+									lane++;
+								else if ((lane-wanted_lane) > 0 && !too_close_left)
+									lane--;
+							}
+							else
+								delay_change--;
+							
+						}
 						
 						if (too_close_front)
 						{
-							if (!too_close_left && lane>0)
-								lane--;
-							else if (!too_close_right && lane<2)
-								lane++;
-							else
+							if (front_dist < last_dist)
 								ref_vel -= .448;
+							else
+								ref_vel += .448;
+							last_dist = front_dist;
 						}
-						else if (ref_vel < 49.5)
+						else if (ref_vel < 49.5 && close_front)
 							ref_vel += .448;
+							
+						lane0_dist = 1000000;
+						lane1_dist = 1000000;
+						lane2_dist = 1000000;
 						
           	vector<double> ptsx;
           	vector<double> ptsy;
